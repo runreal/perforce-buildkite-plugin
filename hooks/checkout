@@ -6,11 +6,12 @@ script_folder="$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")"
 plugin_dir="$(dirname "$script_folder")"
 
 # Python binary selection
+# Check python first then python3 (Windows annoyingly symlinks python3 to the app store)
 python_bin=""
-if [[ -x "$(command -v python3)" ]]; then
-  python_bin="python3"
-elif [[ -x "$(command -v python)" ]]; then
+if [[ -x "$(command -v python)" ]]; then
   python_bin="python"
+elif [[ -x "$(command -v python3)" ]]; then
+  python_bin="python3"
 else
   echo "🚨 Python binary not found"
   exit 1
