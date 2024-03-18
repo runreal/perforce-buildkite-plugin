@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+.buildkite/plugins
+.vscode
+.pytest_cache
+.dev-venv
+.perforce-plugin-venv*
+
+local-pipeline
+python/fixture/server

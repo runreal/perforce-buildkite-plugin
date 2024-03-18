@@ -1,0 +1,51 @@
+#!/bin/bash
+set -euo pipefail
+
+# Determine plugin directory
+script_folder="$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")"
+plugin_dir="$(dirname "$script_folder")"
+
+# Python binary selection
+python_bin=""
+if [[ -x "$(command -v python3)" ]]; then
+  python_bin="python3"
+elif [[ -x "$(command -v python)" ]]; then
+  python_bin="python"
+else
+  echo "🚨 Python binary not found"
+  exit 1
+fi
+
+# Install uv if not already installed
+uv_version="0.1.21"
+if ! [[ -x "$(command -v uv)" ]]; then
+  "${python_bin}" -m pip install "uv==${uv_version}"
+fi
+
+# Generate a unique SHA for the virtualenv based on requirements.txt
+venv_sha=$(shasum "${plugin_dir}/python/requirements.txt" | awk '{print $1}')
+venv_dir="${BUILDKITE_BUILD_CHECKOUT_PATH}/../.perforce-plugin-venv-${venv_sha}"
+
+# Check for the existence of the virtualenv directory
+if ! [[ -d "${venv_dir}" ]]; then
+  temp_venv_dir=$(mktemp -d -t perforce-plugin-venv-XXXXXX)
+  trap "rm -rf '${temp_venv_dir}'" EXIT
+  uv venv "${venv_dir}"
+  VIRTUAL_ENV="${venv_dir}" uv pip install -r "${plugin_dir}/python/requirements.txt"
+  # second check to minimize venv init race
+  if ! [[ -d "${venv_dir}" ]]; then
+    mv "${temp_venv_dir}" "${venv_dir}"
+  fi
+  echo "virtualenv created at ${venv_dir}"
+fi
+
+# Determine the platform and set the virtualenv python binary path
+platform=$("${python_bin}" -c "import platform; print(platform.system())")
+if [[ "${platform}" == "Windows" ]]; then
+  venv_python_bin="/Scripts/python"
+else
+  venv_python_bin="/bin/python"
+fi
+
+# Execute the script within the virtual environment
+"${venv_dir}${venv_python_bin}" "${plugin_dir}/python/checkout.py"
