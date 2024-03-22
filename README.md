@@ -21,7 +21,7 @@ env:
 
 steps:
   plugins:
-    - improbable-eng/perforce: ~
+    - runreal/perforce: ~
 ```
 
 ### Configuration via plugin
@@ -29,7 +29,7 @@ steps:
 ```yaml
 steps:
   plugins:
-    - improbable-eng/perforce:
+    - runreal/perforce:
       p4port: perforce:1666
       p4user: username
 ```
