@@ -30,3 +30,5 @@ configuration:
       type: string
     view:
       type: string
+    subdir_root:
+      type: string

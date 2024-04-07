@@ -56,9 +56,16 @@ def get_config():
 
     if "BUILDKITE_PLUGIN_PERFORCE_ROOT" in os.environ and not __LOCAL_RUN__:
         raise Exception("Custom P4 root is for use in unit tests only")
-    conf["root"] = os.environ.get("BUILDKITE_PLUGIN_PERFORCE_ROOT") or os.environ.get(
-        "BUILDKITE_BUILD_CHECKOUT_PATH/p4"
+    root_path = os.environ.get("BUILDKITE_PLUGIN_PERFORCE_ROOT") or os.environ.get(
+        "BUILDKITE_BUILD_CHECKOUT_PATH"
     )
+
+    # Allow for a subdirectory to be used as the root of the p4 client
+    # Useful to merge a git and p4 repo into a single workspace
+    if "BUILDKITE_PLUGIN_PERFORCE_SUBDIR_ROOT" in os.environ:
+        conf["root"] = os.path.join(root_path, os.environ["BUILDKITE_PLUGIN_PERFORCE_SUBDIR_ROOT"])
+    else:
+      conf["root"] = root_path
 
     # Coerce view into pairs of [depot client] paths
     view_parts = conf["view"].split(" ")
