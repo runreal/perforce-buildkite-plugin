@@ -49,4 +49,5 @@ else
 fi
 
 # Execute the script within the virtual environment
+echo "--- :file_folder: Configuring Perforce"
 "${venv_dir}${venv_python_bin}" "${plugin_dir}/python/checkout.py"

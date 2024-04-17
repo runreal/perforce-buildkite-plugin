@@ -318,6 +318,7 @@ class P4Repo:
         self._setup_client()
         self.revert()
         sync_files = ["%s%s" % (path, revision or "") for path in self.sync_paths]
+        print("--- :open_file_folder: Running Perforce Sync [%s]" % sync_files)
         result = self.perforce.run_sync(
             "--parallel=threads=%s" % self.parallel,
             *sync_files,
