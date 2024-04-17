@@ -87,7 +87,7 @@ class P4Repo:
         """Get unique clientname for this host and location on disk"""
         clientname = "bk-p4-%s-%s" % (
             os.environ.get("BUILDKITE_AGENT_NAME", socket.gethostname()),
-            os.path.basename(self.root),
+            os.path.basename(os.environ.get("BUILDKITE_BUILD_CHECKOUT_PATH", self.root)),
         )
         return re.sub(r"\W", "-", clientname)
 
