@@ -388,6 +388,43 @@ def test_p4print_unshelve(server, tmpdir):
     repo.p4print_unshelve("3")  # Modify a file
 
 
+def test_p4print_unshelve_connection_failures(server, tmpdir, monkeypatch):
+    """Test that failed parallel p4 prints are retried, and raise if they keep failing"""
+    import perforce
+    from P4 import P4, P4Exception
+
+    repo = P4Repo(root=tmpdir, print_parallel=1)
+    repo.sync()
+    monkeypatch.setattr(perforce.time, "sleep", lambda _: None)
+
+    # Transient connection failures are retried
+    real_connect = P4.connect
+    failures = {"remaining": 2}
+
+    def flaky_connect(self):
+        if failures["remaining"] > 0:
+            failures["remaining"] -= 1
+            raise P4Exception("connect: WSAETIMEDOUT")
+        return real_connect(self)
+
+    monkeypatch.setattr(P4, "connect", flaky_connect)
+    repo.p4print_unshelve("3")  # Modify a file
+    assert failures["remaining"] == 0
+    with open(os.path.join(tmpdir, "file.txt")) as content:
+        assert (
+            content.read() == "Goodbye World\n"
+        ), "Unexpected content in workspace file"
+
+    # Persistent connection failures raise instead of leaving the workspace partially unshelved
+    def broken_connect(self):
+        raise P4Exception("connect: WSAETIMEDOUT")
+
+    monkeypatch.setattr(P4, "connect", broken_connect)
+    with pytest.raises(Exception, match=r"1 of 1 p4 commands failed"):
+        repo.p4print_unshelve("5")  # Add a file
+    assert not os.path.exists(os.path.join(tmpdir, "newfile.txt"))
+
+
 def copytree(src, dst):
     """Shim to get around shutil.copytree requiring root dir to not exist"""
     for item in os.listdir(src):

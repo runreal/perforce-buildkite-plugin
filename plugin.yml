@@ -18,6 +18,8 @@ configuration:
       type: string
     parallel:
       type: string
+    print_parallel:
+      type: string
     share_workspace:
       type: bool
     stream:

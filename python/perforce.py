@@ -9,6 +9,9 @@ import logging
 import sys
 import stat
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # Recommended reference: https://www.perforce.com/manuals/p4python/p4python.pdf
@@ -28,6 +31,7 @@ class P4Repo:
         client_type=None,
         parallel=0,
         fingerprint=None,
+        print_parallel=20,
     ):
         """
         root: Directory in which to create the client workspace
@@ -38,6 +42,7 @@ class P4Repo:
         client_type: Type of client (writeable, readonly, partitioned)
         parallel: How many threads to use for parallel sync.
         fingerprint: Acceptable fingerprint for a p4 server to have.
+        print_parallel: How many connections to use for parallel p4 print when unshelving.
         """
         self.root = os.path.abspath(root or "")
         self.stream = stream
@@ -48,6 +53,8 @@ class P4Repo:
         self.client_type = client_type or "writeable"
         self.parallel = parallel
         self.fingerprint = fingerprint or ""
+        self.print_parallel = int(print_parallel)
+        assert self.print_parallel > 0, "print_parallel must be at least 1"
 
         self.created_client = False
         self.patchfile = os.path.join(self.root, "patched.json")
@@ -343,19 +350,67 @@ class P4Repo:
             self.perforce.run_clean(patched)
             os.remove(self.patchfile)
 
-    def run_parallel_cmds(self, cmds, max_parallel=20):
-        def run(*args):
-            """Acquire new connection and run p4 cmd"""
-            perforce = P4()
-            perforce.exception_level = self.perforce.exception_level
-            perforce.logger = self.perforce.logger
-            perforce.connect()
-            perforce.run(*args)
+    def run_parallel_cmds(self, cmds, max_parallel=20, retries=3):
+        """Run p4 cmds in parallel, raising if any cmd still fails after retries"""
+        local = threading.local()
+        connections = []
+        lock = threading.Lock()
 
-        from concurrent.futures import ThreadPoolExecutor
+        def get_connection():
+            """Reuse one connection per worker thread"""
+            perforce = getattr(local, "perforce", None)
+            if perforce is None or not perforce.connected():
+                perforce = P4()
+                perforce.exception_level = self.perforce.exception_level
+                perforce.logger = self.perforce.logger
+                perforce.connect()
+                local.perforce = perforce
+                with lock:
+                    connections.append(perforce)
+            return perforce
 
-        with ThreadPoolExecutor(max_workers=max_parallel) as executor:
-            executor.map(run, cmds)
+        def run(args):
+            for attempt in range(1, retries + 1):
+                try:
+                    return get_connection().run(*args)
+                except P4Exception:
+                    if attempt == retries:
+                        raise
+                    self.perforce.logger.warning(
+                        "Retrying p4 %s (attempt %d/%d)"
+                        % (" ".join(args), attempt + 1, retries)
+                    )
+                    retried.append(args)
+                    # Drop the connection so the next attempt reconnects
+                    local.perforce = None
+                    time.sleep(2**attempt)
+
+        failures = []
+        retried = []
+        try:
+            with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+                futures = {executor.submit(run, cmd): cmd for cmd in cmds}
+                for future in as_completed(futures):
+                    if future.exception():
+                        failures.append(futures[future])
+        finally:
+            for perforce in connections:
+                if perforce.connected():
+                    perforce.disconnect()
+
+        self.perforce.logger.info(
+            "Ran %d p4 commands across %d connections (max_parallel=%d, retries=%d, failures=%d)"
+            % (len(cmds), len(connections), max_parallel, len(retried), len(failures))
+        )
+        if failures:
+            raise Exception(
+                "%d of %d p4 commands failed:\n%s"
+                % (
+                    len(failures),
+                    len(cmds),
+                    "\n".join("p4 %s" % " ".join(cmd) for cmd in failures),
+                )
+            )
 
     def p4print_unshelve(self, changelist):
         """Unshelve a pending change by p4printing the contents into a file"""
@@ -394,7 +449,7 @@ class P4Repo:
                     ("print", "-o", localfile, "%s@=%s" % (depotfile, changelist))
                 )
 
-        self.run_parallel_cmds(cmds)
+        self.run_parallel_cmds(cmds, max_parallel=self.print_parallel)
 
 
 class SyncOutput(OutputHandler):

@@ -107,6 +107,12 @@ Default: `0` (no parallelism)
 
 Number of threads to use for parallel sync operations. High values may affect Perforce server performance.
 
+#### `print_parallel` (optional, string)
+
+Default: `20`
+
+Number of concurrent connections used to `p4 print` the files of a shelved changelist into the workspace. Lower this if large shelves see connection timeouts. Each failed print is retried, and the checkout fails if any file still cannot be printed.
+
 #### `share_workspace` (optional, bool)
 
 Default: `no`
